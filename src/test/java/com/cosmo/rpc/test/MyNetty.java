@@ -1,10 +1,13 @@
 package com.cosmo.rpc.test;
 
+import io.netty.bootstrap.Bootstrap;
+import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.*;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelInboundHandlerAdapter;
-import io.netty.channel.ChannelPipeline;
+import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.ServerSocketChannel;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import org.junit.jupiter.api.Test;
 
@@ -71,6 +74,7 @@ public class MyNetty {
         });
     }
 
+    @Test
     public void clientMode() throws InterruptedException {
         NioEventLoopGroup thread = new NioEventLoopGroup(1);
 
@@ -95,7 +99,76 @@ public class MyNetty {
 
 
     }
+
+    @Test
+    public void nettyClient() throws InterruptedException {
+        NioEventLoopGroup group = new NioEventLoopGroup();
+        Bootstrap bs = new Bootstrap();
+        ChannelFuture channelFuture = bs.group(group).channel(NioSocketChannel.class).handler(new ChannelInitializer<NioSocketChannel>() {
+            @Override
+            protected void initChannel(NioSocketChannel socketChannel) throws Exception {
+                ChannelPipeline pipeline = socketChannel.pipeline();
+                pipeline.addLast(new MyInHandler());
+            }
+        }).connect(new InetSocketAddress("127.0.0.1", 8000));
+        Channel channel = channelFuture.sync().channel();
+
+        ByteBuf byteBuf = Unpooled.copiedBuffer("hello server".getBytes());
+
+        ChannelFuture send = channel.writeAndFlush(byteBuf);
+        send.sync();
+
+        channel.closeFuture().sync();
+    }
+
+
+    @Test
+    public void serverMode() throws InterruptedException {
+        NioEventLoopGroup thread = new NioEventLoopGroup(1);
+        NioServerSocketChannel server = new NioServerSocketChannel();
+
+        thread.register(server);
+        ChannelPipeline p = server.pipeline();
+        p.addLast(new MyAcceptHandler());
+        ChannelFuture channelFuture = server.bind(new InetSocketAddress("127.0.0.1", 8000));
+        channelFuture.sync().channel().closeFuture().sync();
+
+    }
+
+    @Test
+    public void nettyServer() throws InterruptedException {
+        NioEventLoopGroup boss = new NioEventLoopGroup(1);
+        NioEventLoopGroup worker = new NioEventLoopGroup(2);
+
+        ServerBootstrap bs = new ServerBootstrap();
+
+        ChannelFuture bind = bs.group(boss, worker).channel(NioServerSocketChannel.class).childHandler(new ChannelInitializer<NioSocketChannel>() {
+            @Override
+            protected void initChannel(NioSocketChannel serverSocketChannel) throws Exception {
+                ChannelPipeline pipeline = serverSocketChannel.pipeline();
+                pipeline.addLast(new MyInHandler());
+            }
+        }).bind(new InetSocketAddress("127.0.0.1", 8000));
+
+        bind.sync().channel().closeFuture().sync();
+
+    }
+
 }
+class MyAcceptHandler extends  ChannelInboundHandlerAdapter{
+    @Override
+    public void channelRegistered(ChannelHandlerContext ctx) throws Exception {
+        System.out.println("server registered...");
+    }
+
+    @Override
+    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+        SocketChannel client = (SocketChannel) msg;
+
+
+    }
+}
+
 class MyInHandler extends ChannelInboundHandlerAdapter{
 
 }
